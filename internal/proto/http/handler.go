@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"white-toyota-tacoma/internal/capture"
-	"white-toyota-tacoma/internal/fingerprint"
+	"github.com/sshpie/white-toyota-tacoma/internal/capture"
+	"github.com/sshpie/white-toyota-tacoma/internal/fingerprint"
 )
 
 // ServeElasticsearch starts an Elasticsearch-compatible HTTP honeypot.
@@ -26,7 +26,6 @@ func ServeElasticsearch(
 	maxBodyBytes int64,
 ) error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", esRootHandler(fp, cfg))
 	mux.HandleFunc("/_nodes", esNodesHandler(fp, cfg))
 	mux.HandleFunc("/_nodes/", esNodesHandler(fp, cfg))
 	mux.HandleFunc("/_cluster/health", esClusterHealthHandler(fp, cfg))
@@ -34,7 +33,8 @@ func ServeElasticsearch(
 	mux.HandleFunc("/_cat/", esCatHandler(fp, cfg, store, maxBodyBytes))
 	mux.HandleFunc("/_search", esSearchHandler(fp, cfg, store, maxBodyBytes))
 	mux.HandleFunc("/_xpack", esXpackHandler(fp, cfg))
-	mux.HandleFunc("/", esCatchAllHandler(fp, cfg, store, maxBodyBytes))
+	// "/" is the catch-all; esRootHandler delegates to esCatchAllHandler for non-root paths.
+	mux.HandleFunc("/", esRootHandler(fp, cfg, store, maxBodyBytes))
 
 	srv := &http.Server{
 		Addr:         addr,
@@ -71,10 +71,10 @@ func ServeCouchDB(
 	maxBodyBytes int64,
 ) error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", couchRootHandler(fp, couchVersion))
 	mux.HandleFunc("/_session", couchSessionHandler(fp, couchVersion, store, maxBodyBytes))
 	mux.HandleFunc("/_utils/", couchFutonHandler())
-	mux.HandleFunc("/", couchDBHandler(couchVersion, store, maxBodyBytes))
+	// "/" is the catch-all; couchRootHandler delegates to couchDBHandler for non-root paths.
+	mux.HandleFunc("/", couchRootHandler(fp, couchVersion, store, maxBodyBytes))
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -108,10 +108,10 @@ type ESConfig struct {
 
 // ---- Elasticsearch handlers ----
 
-func esRootHandler(fp *fingerprint.FP, cfg ESConfig) http.HandlerFunc {
+func esRootHandler(fp *fingerprint.FP, cfg ESConfig, store *capture.Store, maxBodyBytes int64) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
-			esCatchAllHandler(fp, cfg, nil, 0)(w, r)
+			esCatchAllHandler(fp, cfg, store, maxBodyBytes)(w, r)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -275,10 +275,10 @@ func esCatchAllHandler(fp *fingerprint.FP, cfg ESConfig, store *capture.Store, m
 
 // ---- CouchDB handlers ----
 
-func couchRootHandler(fp *fingerprint.FP, version string) http.HandlerFunc {
+func couchRootHandler(fp *fingerprint.FP, version string, store *capture.Store, maxBodyBytes int64) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
-			couchDBHandler(version, nil, 0)(w, r)
+			couchDBHandler(version, store, maxBodyBytes)(w, r)
 			return
 		}
 		writeJSONWithContentType(w, http.StatusOK, map[string]interface{}{

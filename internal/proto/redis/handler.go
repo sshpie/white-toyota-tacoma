@@ -10,14 +10,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"white-toyota-tacoma/internal/capture"
-	"white-toyota-tacoma/internal/fingerprint"
+	"github.com/sshpie/white-toyota-tacoma/internal/capture"
+	"github.com/sshpie/white-toyota-tacoma/internal/fingerprint"
 )
 
 // Counters tracks per-server Redis stats.
 type Counters struct {
-	connections atomic.Int64
-	commands    atomic.Int64
+	received atomic.Int64 // total_connections_received (monotonic)
+	active   atomic.Int64 // currently active connections
+	commands atomic.Int64
 }
 
 // Handler serves the Redis protocol to one connection.
@@ -31,8 +32,9 @@ func Handler(
 	version string,
 	counters *Counters,
 ) {
-	totalConns := counters.connections.Add(1)
-	defer counters.connections.Add(-1)
+	counters.received.Add(1)
+	counters.active.Add(1)
+	defer counters.active.Add(-1)
 
 	ip, portStr, _ := net.SplitHostPort(conn.RemoteAddr().String())
 	port := 0
@@ -70,9 +72,8 @@ func Handler(
 		}
 		resetDeadline()
 		counters.commands.Add(1)
-		_ = totalConns // used in INFO
 
-		if err := handleCmd(cmd, w, store, fp, version, ip, port, &counters.commands, &counters.connections); err != nil {
+		if err := handleCmd(cmd, w, store, fp, version, ip, port, &counters.commands, &counters.received); err != nil {
 			return
 		}
 		if err := flush(); err != nil {
@@ -92,6 +93,25 @@ func handleCmd(
 	totalConns *atomic.Int64,
 ) error {
 	switch cmd.Name {
+	case "HELLO":
+		// HELLO [protover [AUTH username password] [SETNAME clientname]]
+		// Capture embedded credentials before declining the protocol upgrade.
+		args := cmd.Args[1:]
+		for i := 0; i+2 < len(args); i++ {
+			if strings.ToUpper(args[i]) == "AUTH" {
+				store.Log(capture.Event{
+					Protocol: capture.ProtoRedis,
+					SrcIP:    ip,
+					SrcPort:  port,
+					Username: args[i+1],
+					Password: args[i+2],
+					Command:  "HELLO AUTH",
+				})
+				break
+			}
+		}
+		return WriteError(w, "NOPROTO sorry, this server does not support HELLO")
+
 	case "COMMAND":
 		return WriteSimple(w, "OK")
 
@@ -263,7 +283,7 @@ rdb_last_save_time:%d
 rdb_last_bgsave_status:ok
 aof_enabled:0
 `, version, fp.RedisRunID[:16], fp.RedisProcessID, fp.RedisRunID,
-		time.Now().UnixMicro(), uptime, uptimeDays, fp.RedisSaveTime())
+		time.Now().UnixMicro(), uptime, uptimeDays, fp.RedisSaveEpoch)
 
 	clients := `# Clients
 connected_clients:1

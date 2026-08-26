@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	maxBulkLen   = 512 * 1024 * 1024 // 512 MB — Redis wire max
+	maxBulkLen   = 16 * 1024 * 1024 // 16 MB — Redis max bulk string
 	maxInlineLen = 65536
 	maxArgs      = 1024
 )

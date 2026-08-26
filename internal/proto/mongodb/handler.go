@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"white-toyota-tacoma/internal/capture"
-	"white-toyota-tacoma/internal/fingerprint"
+	"github.com/sshpie/white-toyota-tacoma/internal/capture"
+	"github.com/sshpie/white-toyota-tacoma/internal/fingerprint"
 )
 
 const (
@@ -189,18 +189,15 @@ func handleOpMsg(conn net.Conn, hdr msgHeader, payload []byte, store *capture.St
 
 		switch kind {
 		case 0: // Body section: one BSON document.
+			// Extract command name from the wire bytes (deterministic first key),
+			// not from the parsed map (Go map iteration order is random).
+			command = bsonFirstKey(payload[pos:])
 			parsed, n := parseBSONDoc(payload[pos:])
 			if n < 0 {
 				break
 			}
 			pos += n
 			doc = parsed
-
-			// Extract command name (first key in document).
-			for k := range parsed {
-				command = strings.ToLower(k)
-				break
-			}
 
 		case 1: // Document sequence.
 			if pos+4 > len(payload) {
@@ -247,7 +244,7 @@ func handleOpMsg(conn net.Conn, hdr msgHeader, payload []byte, store *capture.St
 	case "ping":
 		return sendOpMsgReply(conn, hdr.RequestID, map[string]interface{}{"ok": 1})
 	case "buildinfo", "buildInfo":
-		return sendOpMsgReply(conn, hdr.RequestID, buildInfoDoc(version))
+		return sendOpMsgReply(conn, hdr.RequestID, buildInfoDoc(fp, version))
 	case "listdatabases", "listDatabases":
 		return sendOpMsgReply(conn, hdr.RequestID, map[string]interface{}{
 			"databases": []interface{}{},
@@ -346,17 +343,39 @@ func buildIsMasterDoc(fp *fingerprint.FP, version string) map[string]interface{}
 	}
 }
 
-func buildInfoDoc(version string) map[string]interface{} {
+func buildInfoDoc(fp *fingerprint.FP, version string) map[string]interface{} {
 	return map[string]interface{}{
-		"version":       version,
-		"gitVersion":    fingerprint.New("").ESBuildHash, // reuse random hash
-		"sysInfo":       "Linux",
-		"versionArray":  []int{7, 0, 8, 0},
-		"bits":          64,
-		"debug":         false,
+		"version":           version,
+		"gitVersion":        fp.ESBuildHash,
+		"sysInfo":           "Linux",
+		"versionArray":      []int{7, 0, 8, 0},
+		"bits":              64,
+		"debug":             false,
 		"maxBsonObjectSize": 16777216,
-		"ok":            1,
+		"ok":                1,
 	}
+}
+
+// bsonFirstKey returns the first key in a BSON document from the raw wire bytes.
+// This is deterministic (first element on the wire) unlike Go map iteration.
+func bsonFirstKey(data []byte) string {
+	if len(data) < 5 {
+		return ""
+	}
+	docLen := int(binary.LittleEndian.Uint32(data[0:]))
+	if docLen < 5 || docLen > len(data) {
+		return ""
+	}
+	pos := 4 // skip docLen
+	if pos >= docLen {
+		return ""
+	}
+	pos++ // skip elemType byte
+	end := indexByte(data[pos:], 0)
+	if end < 0 || pos+end >= docLen {
+		return ""
+	}
+	return strings.ToLower(string(data[pos : pos+end]))
 }
 
 // parseBSONDoc parses a BSON document and returns a Go map and the number of bytes consumed.
@@ -373,6 +392,7 @@ func parseBSONDoc(data []byte) (map[string]interface{}, int) {
 	doc := make(map[string]interface{})
 	pos := 4 // skip docLen
 
+parseLoop:
 	for pos < docLen-1 {
 		if pos >= len(data) {
 			break
@@ -392,69 +412,80 @@ func parseBSONDoc(data []byte) (map[string]interface{}, int) {
 		switch elemType {
 		case 0x02: // UTF-8 string
 			if pos+4 > docLen || pos+4 > len(data) {
-				break
+				break parseLoop
 			}
 			strLen := int(binary.LittleEndian.Uint32(data[pos:]))
 			pos += 4
 			if strLen < 1 || pos+strLen > docLen || pos+strLen > len(data) {
-				break
+				break parseLoop
 			}
 			doc[key] = string(data[pos : pos+strLen-1]) // strip null
 			pos += strLen
 
 		case 0x10: // int32
 			if pos+4 > docLen || pos+4 > len(data) {
-				break
+				break parseLoop
 			}
 			doc[key] = int32(binary.LittleEndian.Uint32(data[pos:]))
 			pos += 4
 
 		case 0x12: // int64
 			if pos+8 > docLen || pos+8 > len(data) {
-				break
+				break parseLoop
 			}
 			doc[key] = int64(binary.LittleEndian.Uint64(data[pos:]))
 			pos += 8
 
 		case 0x08: // boolean
 			if pos >= docLen || pos >= len(data) {
-				break
+				break parseLoop
 			}
 			doc[key] = data[pos] != 0
 			pos++
 
 		case 0x01: // double
+			if pos+8 > len(data) {
+				break parseLoop
+			}
 			pos += 8
 
 		case 0x03, 0x04: // embedded document or array — skip
 			if pos+4 > len(data) {
-				break
+				break parseLoop
 			}
 			subLen := int(binary.LittleEndian.Uint32(data[pos:]))
 			if subLen < 5 || pos+subLen > len(data) {
-				break
+				break parseLoop
 			}
 			pos += subLen
 
 		case 0x05: // binary
 			if pos+4 > len(data) {
-				break
+				break parseLoop
 			}
 			binLen := int(binary.LittleEndian.Uint32(data[pos:]))
+			if pos+5+binLen > len(data) {
+				break parseLoop
+			}
 			pos += 5 + binLen // 4 (len) + 1 (subtype) + data
 
 		case 0x07: // ObjectId
+			if pos+12 > len(data) {
+				break parseLoop
+			}
 			pos += 12
 
 		case 0x09: // UTC datetime
+			if pos+8 > len(data) {
+				break parseLoop
+			}
 			pos += 8
 
-		case 0x0A: // null
-			// no value bytes
+		case 0x0A: // null — no value bytes
 
 		default:
-			// Unknown type — stop parsing this document to avoid misalignment.
-			break
+			// Unknown type — stop parsing to avoid misalignment.
+			break parseLoop
 		}
 	}
 
@@ -512,23 +543,61 @@ func encodeBSON(doc map[string]interface{}) ([]byte, error) {
 			}
 
 		case float64:
-			// Store as int32 approximation for simplicity.
+			// Store as int32 for integer-valued floats (covers all values in our responses).
 			buf := make([]byte, 4)
 			binary.LittleEndian.PutUint32(buf, uint32(int32(val)))
 			elems = append(elems, 0x10)
 			elems = append(elems, key...)
 			elems = append(elems, buf...)
 
+		case map[string]interface{}:
+			subDoc, err := encodeBSON(val)
+			if err != nil {
+				subDoc = minimalBSON()
+			}
+			elems = append(elems, 0x03) // embedded document
+			elems = append(elems, key...)
+			elems = append(elems, subDoc...)
+
+		case []interface{}:
+			arrMap := make(map[string]interface{}, len(val))
+			for i, v := range val {
+				arrMap[fmt.Sprintf("%d", i)] = v
+			}
+			subDoc, _ := encodeBSON(arrMap)
+			elems = append(elems, 0x04) // array
+			elems = append(elems, key...)
+			elems = append(elems, subDoc...)
+
+		case []string:
+			arrMap := make(map[string]interface{}, len(val))
+			for i, s := range val {
+				arrMap[fmt.Sprintf("%d", i)] = s
+			}
+			subDoc, _ := encodeBSON(arrMap)
+			elems = append(elems, 0x04) // array
+			elems = append(elems, key...)
+			elems = append(elems, subDoc...)
+
+		case []int:
+			arrMap := make(map[string]interface{}, len(val))
+			for i, v := range val {
+				arrMap[fmt.Sprintf("%d", i)] = int32(v)
+			}
+			subDoc, _ := encodeBSON(arrMap)
+			elems = append(elems, 0x04) // array
+			elems = append(elems, key...)
+			elems = append(elems, subDoc...)
+
 		default:
 			// Fallback: encode as JSON string.
 			jb, _ := json.Marshal(val)
-			s := jb
 			lenBuf := make([]byte, 4)
-			binary.LittleEndian.PutUint32(lenBuf, uint32(len(s)+1))
+			binary.LittleEndian.PutUint32(lenBuf, uint32(len(jb)+1))
 			elems = append(elems, 0x02)
 			elems = append(elems, key...)
 			elems = append(elems, lenBuf...)
-			elems = append(elems, s...)
+			elems = append(elems, jb...)
 			elems = append(elems, 0)
 		}
 	}

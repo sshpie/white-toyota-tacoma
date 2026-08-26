@@ -7,11 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"time"
 
-	"white-toyota-tacoma/internal/capture"
-	"white-toyota-tacoma/internal/fingerprint"
+	"github.com/sshpie/white-toyota-tacoma/internal/capture"
+	"github.com/sshpie/white-toyota-tacoma/internal/fingerprint"
 )
 
 const (
@@ -350,5 +349,3 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
-// keep unused import happy
-var _ = strings.ToLower

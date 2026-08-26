@@ -31,6 +31,7 @@ type Server struct {
 	ipCounts       map[string]int    // simple per-IP connection count
 
 	done           chan struct{}
+	stopOnce       sync.Once
 	wg             sync.WaitGroup
 }
 
@@ -123,7 +124,7 @@ func (s *Server) Serve(ctx context.Context) error {
 
 // Stop signals the server to stop accepting new connections.
 func (s *Server) Stop() {
-	close(s.done)
+	s.stopOnce.Do(func() { close(s.done) })
 	s.wg.Wait()
 }
 

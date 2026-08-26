@@ -15,15 +15,15 @@ import (
 	"syscall"
 	"time"
 
-	"white-toyota-tacoma/internal/capture"
-	"white-toyota-tacoma/internal/config"
-	"white-toyota-tacoma/internal/fingerprint"
-	"white-toyota-tacoma/internal/proto/http"
-	"white-toyota-tacoma/internal/proto/mongodb"
-	"white-toyota-tacoma/internal/proto/mysql"
-	"white-toyota-tacoma/internal/proto/postgres"
-	"white-toyota-tacoma/internal/proto/redis"
-	"white-toyota-tacoma/internal/server"
+	"github.com/sshpie/white-toyota-tacoma/internal/capture"
+	"github.com/sshpie/white-toyota-tacoma/internal/config"
+	"github.com/sshpie/white-toyota-tacoma/internal/fingerprint"
+	"github.com/sshpie/white-toyota-tacoma/internal/proto/http"
+	"github.com/sshpie/white-toyota-tacoma/internal/proto/mongodb"
+	"github.com/sshpie/white-toyota-tacoma/internal/proto/mysql"
+	"github.com/sshpie/white-toyota-tacoma/internal/proto/postgres"
+	"github.com/sshpie/white-toyota-tacoma/internal/proto/redis"
+	"github.com/sshpie/white-toyota-tacoma/internal/server"
 )
 
 func main() {

@@ -7,11 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"time"
 
-	"white-toyota-tacoma/internal/capture"
-	"white-toyota-tacoma/internal/fingerprint"
+	"github.com/sshpie/white-toyota-tacoma/internal/capture"
+	"github.com/sshpie/white-toyota-tacoma/internal/fingerprint"
 )
 
 const (
@@ -81,7 +80,6 @@ func Handler(
 		if err != nil {
 			return
 		}
-		_ = seq
 
 		if len(payload) == 0 {
 			continue
@@ -102,17 +100,17 @@ func Handler(
 				Command:  truncate(query, 2048),
 			})
 			// Return empty result set.
-			if err := sendEmptyResultSet(conn, 2); err != nil {
+			if err := sendEmptyResultSet(conn, seq+1); err != nil {
 				return
 			}
 		case 0x02: // COM_INIT_DB
 			database = string(payload[1:])
-			if err := sendOK(conn, 2); err != nil {
+			if err := sendOK(conn, seq+1); err != nil {
 				return
 			}
 		default:
 			// Unknown command — send OK to stay alive.
-			if err := sendOK(conn, 2); err != nil {
+			if err := sendOK(conn, seq+1); err != nil {
 				return
 			}
 		}
@@ -330,12 +328,3 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
-// stripControl removes ASCII control characters from attacker strings.
-func stripControl(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
-			return -1
-		}
-		return r
-	}, s)
-}

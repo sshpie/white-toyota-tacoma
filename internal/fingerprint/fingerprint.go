@@ -18,6 +18,7 @@ type FP struct {
 	RedisRunID        string // 40 lowercase hex chars
 	RedisMasterReplID string // 40 lowercase hex chars
 	RedisProcessID    int
+	RedisSaveEpoch    int64 // fixed last-save timestamp (startup - random offset)
 
 	// MySQL
 	MySQLStartupTime time.Time // used to compute Uptime
@@ -30,16 +31,13 @@ type FP struct {
 	MongoPID       int
 
 	// Elasticsearch / CouchDB (shared HTTP services)
-	ESNodeUUID  string // 22-char base62-like (matches ES node ID format)
-	ESBuildHash string // 40 lowercase hex chars
-	ESHostname  string
-	ESPID       int
+	ESNodeUUID   string // 22-char base62-like (matches ES node ID format)
+	ESBuildHash  string // 40 lowercase hex chars
+	ESHostname   string
+	ESPID        int
 	ESMACAddress string
 
 	StartTime time.Time
-
-	// Live counters (incremented atomically by handlers via capture package)
-	// Stored here for fingerprint reference; read via atomic helpers elsewhere.
 }
 
 // New generates a fresh FP using crypto/rand. Panics on entropy failure (unrecoverable).
@@ -53,6 +51,7 @@ func New(esHostname string) *FP {
 	fp.RedisRunID = randHex(20)
 	fp.RedisMasterReplID = randHex(20)
 	fp.RedisProcessID = randIntRange(1000, 65535)
+	fp.RedisSaveEpoch = fp.StartTime.Unix() - int64(randIntRange(300, 86400))
 
 	fp.MongoClusterID = randUUIDv4()
 	fp.MongoNodeID = randUUIDv4()
@@ -176,12 +175,6 @@ func mustRead(b []byte) {
 // UptimeSeconds returns the wall-clock seconds since StartTime.
 func (fp *FP) UptimeSeconds() int64 {
 	return int64(time.Since(fp.StartTime).Seconds())
-}
-
-// RedisSaveTime returns a plausible last-save timestamp (slightly before startup).
-func (fp *FP) RedisSaveTime() int64 {
-	offset := int64(randIntRange(300, 86400))
-	return fp.StartTime.Unix() - offset
 }
 
 // randUint32 returns a cryptographically random uint32 (used for MySQL cancel key etc.)
