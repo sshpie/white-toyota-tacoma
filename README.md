@@ -1,16 +1,5 @@
 # White Toyota Tacoma
 
-```
-  ________________
- |                |
- |   W · T · T    |___________________________________________
- |   WHITE TOYOTA |                                          |
- |   TACOMA       |  redis · mysql · postgres                |
- |                |  mongo · elastic · couchdb               |
- |________________|__________________________________________|
-       (___)                                         (___)
-```
-
 Multi-protocol database honeypot. Listens on Redis, MySQL, PostgreSQL, MongoDB, Elasticsearch, and CouchDB ports simultaneously. Logs every credential, query, and command to a JSON-lines file. Zero external dependencies.
 
 ## Quick start
