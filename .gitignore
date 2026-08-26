@@ -1,0 +1,5 @@
+white-toyota-tacoma
+tacoma-events.json
+*.json
+!config.example.json
+go.sum

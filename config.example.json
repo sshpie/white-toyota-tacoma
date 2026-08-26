@@ -1,0 +1,46 @@
+{
+  "listen_addr": "0.0.0.0",
+  "log_file": "tacoma-events.json",
+  "max_connections": 200,
+  "connection_timeout_seconds": 30,
+  "max_request_body_bytes": 1048576,
+  "redis": {
+    "enabled": true,
+    "port": 6379,
+    "version": "7.2.4",
+    "require_pass": ""
+  },
+  "mysql": {
+    "enabled": true,
+    "port": 3306,
+    "version": "8.0.36"
+  },
+  "postgres": {
+    "enabled": true,
+    "port": 5432,
+    "version": "16.2"
+  },
+  "mongodb": {
+    "enabled": true,
+    "port": 27017,
+    "version": "7.0.8"
+  },
+  "elasticsearch": {
+    "enabled": true,
+    "port": 9200,
+    "version": "8.13.2",
+    "cluster_name": "production",
+    "node_name": "node-1"
+  },
+  "couchdb": {
+    "enabled": true,
+    "port": 5984,
+    "version": "3.3.3"
+  },
+  "webhook": {
+    "enabled": false,
+    "url": "",
+    "auth_header": "",
+    "tls_verify": true
+  }
+}
